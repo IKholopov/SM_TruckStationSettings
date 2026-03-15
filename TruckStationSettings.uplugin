@@ -1,0 +1,33 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "TruckStationSettings",
+	"Description": "Adds advanced settings to truck stations!",
+	"Category": "Modding",
+	"CreatedBy": "OOC",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "SML",
+			"Enabled": true,
+			"SemVersion": "^3.11.3"
+		}
+	],
+	"SemVersion": "1.0.0",
+	"GameVersion": ">=416835",
+	"Modules": [
+		{
+			"Name": "TruckStationSettings",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
