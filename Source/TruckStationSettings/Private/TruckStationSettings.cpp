@@ -59,6 +59,9 @@ void TSSFGHooks::RegisterHooks() {
 				UE_LOG(TruckStationSettings, Verbose, TEXT("Added %d items to Docking station inventory"), added);
 				dockedInventory->RemoveFromIndex(itemDescIndex, added);
 				scope.Cancel();
+				if (added == 0) {
+					self->LoadUnloadVehicleComplete();
+				}
 				return;
 			}
 
