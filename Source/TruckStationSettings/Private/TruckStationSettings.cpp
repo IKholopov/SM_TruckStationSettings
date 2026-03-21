@@ -18,7 +18,7 @@ public:
 void TSSFGHooks::RegisterHooks() {
 	if (!WITH_EDITOR) {
 		SUBSCRIBE_METHOD(AFGBuildableDockingStation::Factory_UnloadDockedInventory, [](auto& scope, AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
-			static const FString SMART_TRUCK_STATION_CNAME = TEXT("Build_SmartTruckStation_C");
+			static const FString PROGRAMMABLE_TRUCK_STATION_CNAME = TEXT("Build_ProgrammableTruckStation_C");
 
 			if (self == nullptr) {
 				UE_LOG(TruckStationSettings, Error, TEXT("Got nullptr as self!"));
@@ -28,7 +28,7 @@ void TSSFGHooks::RegisterHooks() {
 			
 			FString dockStationClassName = self->GetClass()->GetName();
 			UE_LOG(TruckStationSettings, Verbose, TEXT("Got instance of %s"), *dockStationClassName);
-			if (dockStationClassName.Equals(SMART_TRUCK_STATION_CNAME)) {
+			if (dockStationClassName.Equals(PROGRAMMABLE_TRUCK_STATION_CNAME)) {
 				UE_LOG(TruckStationSettings, Verbose, TEXT("Applying filtering of smart truck station"));
 				FProperty* filterItemProp = self->GetClass()->FindPropertyByName(FName("FilterItem"));
 				FClassProperty* filterItemClassProp = CastField<FClassProperty>(filterItemProp);
