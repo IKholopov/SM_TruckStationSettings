@@ -39,6 +39,11 @@ void TSSFGHooks::RegisterHooks() {
 				}
 
 				const TObjectPtr<UObject>& filterItemDesc = filterItemClassProp->GetPropertyValue_InContainer(self);
+				if (filterItemDesc.IsNull()) {
+					UE_LOG(TruckStationSettings, Verbose, TEXT("FilterItem is empty"));
+					scope(self, dockedInventory);
+					return;
+				}
 				UClass* filterItemDescClass = Cast<UClass>(filterItemDesc.Get());
 				int32 itemDescIndex = dockedInventory->FindFirstIndexWithItemType(filterItemDescClass, 0);
 				UE_LOG(TruckStationSettings, Verbose, TEXT("Got item desc of %d"), itemDescIndex);
