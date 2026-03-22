@@ -53,25 +53,21 @@ void TSSFGHooks::RegisterHooks() {
 int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
 	UE_LOG(TruckStationSettings, Verbose, TEXT("Applying filtering of smart truck station"));
 	FProperty* filterItemProp = self->GetClass()->FindPropertyByName(FName("FilterItem"));
-	FSetProperty* filterItemSetProp = CastField<FSetProperty>(filterItemProp);
-	if (filterItemSetProp == nullptr) {
+	FArrayProperty* filterItemArrayProp = CastField<FArrayProperty>(filterItemProp);
+	if (filterItemArrayProp == nullptr) {
 		UE_LOG(TruckStationSettings, Error, TEXT("FilterItem set variable is not found!"));
 		return STATUS_RESUME;
 	}
 
-	FScriptSetHelper itemsSet(filterItemSetProp, filterItemSetProp->ContainerPtrToValuePtr<void>(self));
+	FScriptArrayHelper itemsSet(filterItemArrayProp, filterItemArrayProp->ContainerPtrToValuePtr<void>(self));
 	if (itemsSet.Num() == 0) {
 		UE_LOG(TruckStationSettings, Verbose, TEXT("Filters are empty"));
 		return STATUS_RESUME;
 	}
 	int32 addedTotal = 0;
 	for (int32 i = 0; i < itemsSet.Num(); ++i) {
-		if (!itemsSet.IsValidIndex(i)) {
-			continue;
-		}
-
-		uint8* valuePtr = itemsSet.GetElementPtr(i);
-		FObjectPropertyBase* property = CastField<FObjectPropertyBase>(filterItemSetProp->ElementProp);
+		uint8* valuePtr = itemsSet.GetRawPtr(i);
+		FObjectPropertyBase* property = CastField<FObjectPropertyBase>(filterItemArrayProp->Inner);
 		if (property == nullptr) {
 			UE_LOG(TruckStationSettings, Verbose, TEXT("property is empty"));
 			return STATUS_RESUME;
