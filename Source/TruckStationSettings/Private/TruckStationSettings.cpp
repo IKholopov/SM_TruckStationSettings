@@ -86,8 +86,7 @@ int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(AFGBuildableDockingS
 		int32 itemDescIndex = dockedInventory->FindFirstIndexWithItemType(filterItemDescClass, 0);
 		UE_LOG(TruckStationSettings, Verbose, TEXT("Got item desc of %d"), itemDescIndex);
 		if (itemDescIndex == NOT_FOUND) {
-			self->LoadUnloadVehicleComplete();
-			return STATUS_CANCEL;
+			continue;
 		}
 
 		FInventoryStack stack;
