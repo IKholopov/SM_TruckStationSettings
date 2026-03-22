@@ -1,6 +1,8 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "TruckStationSettings.h"
+
+#include "UObject/UnrealType.h"
 #include "Patching/NativeHookManager.h"
 #include "Buildables/FGBuildableDockingStation.h"
 #include "FGInventoryComponent.h"
@@ -8,11 +10,15 @@
 #define LOCTEXT_NAMESPACE "FTruckStationSettingsModule"
 
 constexpr int32 NOT_FOUND = -1;
+constexpr int32 STATUS_CANCEL = 0;
+constexpr int32 STATUS_RESUME = 1;
+
 DEFINE_LOG_CATEGORY(TruckStationSettings);
 
 class TSSFGHooks {
 public:
 	static void RegisterHooks();
+	static int32 ProgrammableUnloadDockedInventoryOverride(AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory);
 };
 
 void TSSFGHooks::RegisterHooks() {
@@ -29,45 +35,10 @@ void TSSFGHooks::RegisterHooks() {
 			FString dockStationClassName = self->GetClass()->GetName();
 			UE_LOG(TruckStationSettings, Verbose, TEXT("Got instance of %s"), *dockStationClassName);
 			if (dockStationClassName.Equals(PROGRAMMABLE_TRUCK_STATION_CNAME)) {
-				UE_LOG(TruckStationSettings, Verbose, TEXT("Applying filtering of smart truck station"));
-				FProperty* filterItemProp = self->GetClass()->FindPropertyByName(FName("FilterItem"));
-				FClassProperty* filterItemClassProp = CastField<FClassProperty>(filterItemProp);
-				if (filterItemClassProp == nullptr) {
-					UE_LOG(TruckStationSettings, Error, TEXT("FilterItem variable is not found!"));
-					scope(self, dockedInventory);
-					return;
-				}
-
-				const TObjectPtr<UObject>& filterItemDesc = filterItemClassProp->GetPropertyValue_InContainer(self);
-				if (filterItemDesc.IsNull()) {
-					UE_LOG(TruckStationSettings, Verbose, TEXT("FilterItem is empty"));
-					scope(self, dockedInventory);
-					return;
-				}
-				UClass* filterItemDescClass = Cast<UClass>(filterItemDesc.Get());
-				int32 itemDescIndex = dockedInventory->FindFirstIndexWithItemType(filterItemDescClass, 0);
-				UE_LOG(TruckStationSettings, Verbose, TEXT("Got item desc of %d"), itemDescIndex);
-				if (itemDescIndex == NOT_FOUND) {
-					scope.Cancel();
-					self->LoadUnloadVehicleComplete();
-					return;
-				}
-
-				FInventoryStack stack;
-				if (!dockedInventory->GetStackFromIndex(itemDescIndex, stack)) {
-					UE_LOG(TruckStationSettings, Error, TEXT("Invalid index requested from docked inventory!"));
+				if (ProgrammableUnloadDockedInventoryOverride(self, dockedInventory) == STATUS_CANCEL) {
 					scope.Cancel();
 					return;
 				}
-				UE_LOG(TruckStationSettings, Verbose, TEXT("Got stack of items %d"), stack.NumItems);
-				int32 added = self->GetInventory()->AddStack(stack, /* allowPartialAdd= */true);
-				UE_LOG(TruckStationSettings, Verbose, TEXT("Added %d items to Docking station inventory"), added);
-				dockedInventory->RemoveFromIndex(itemDescIndex, added);
-				scope.Cancel();
-				if (added == 0) {
-					self->LoadUnloadVehicleComplete();
-				}
-				return;
 			}
 
 			scope(self, dockedInventory);
@@ -77,6 +48,68 @@ void TSSFGHooks::RegisterHooks() {
 			scope(self);
 		});
 	}
+}
+
+int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
+	UE_LOG(TruckStationSettings, Verbose, TEXT("Applying filtering of smart truck station"));
+	FProperty* filterItemProp = self->GetClass()->FindPropertyByName(FName("FilterItem"));
+	FSetProperty* filterItemSetProp = CastField<FSetProperty>(filterItemProp);
+	if (filterItemSetProp == nullptr) {
+		UE_LOG(TruckStationSettings, Error, TEXT("FilterItem set variable is not found!"));
+		return STATUS_RESUME;
+	}
+
+	FScriptSetHelper itemsSet(filterItemSetProp, filterItemSetProp->ContainerPtrToValuePtr<void>(self));
+	if (itemsSet.Num() == 0) {
+		UE_LOG(TruckStationSettings, Verbose, TEXT("Filters are empty"));
+		return STATUS_RESUME;
+	}
+	int32 addedTotal = 0;
+	for (int32 i = 0; i < itemsSet.Num(); ++i) {
+		if (!itemsSet.IsValidIndex(i)) {
+			continue;
+		}
+
+		uint8* valuePtr = itemsSet.GetElementPtr(i);
+		FObjectPropertyBase* property = CastField<FObjectPropertyBase>(filterItemSetProp->ElementProp);
+		if (property == nullptr) {
+			UE_LOG(TruckStationSettings, Verbose, TEXT("property is empty"));
+			return STATUS_RESUME;
+		}
+		UObject* filterItemDesc = property->GetObjectPropertyValue(valuePtr);
+		UClass* filterItemDescClass = Cast<UClass>(filterItemDesc);
+		if (filterItemDescClass == nullptr) {
+			UE_LOG(TruckStationSettings, Verbose, TEXT("FilterItem is empty"));
+			return STATUS_RESUME;
+		}
+
+		int32 itemDescIndex = dockedInventory->FindFirstIndexWithItemType(filterItemDescClass, 0);
+		UE_LOG(TruckStationSettings, Verbose, TEXT("Got item desc of %d"), itemDescIndex);
+		if (itemDescIndex == NOT_FOUND) {
+			self->LoadUnloadVehicleComplete();
+			return STATUS_CANCEL;
+		}
+
+		FInventoryStack stack;
+		if (!dockedInventory->GetStackFromIndex(itemDescIndex, stack)) {
+			UE_LOG(TruckStationSettings, Error, TEXT("Invalid index requested from docked inventory!"));
+			return STATUS_CANCEL;
+		}
+		UE_LOG(TruckStationSettings, Verbose, TEXT("Got stack of items %d"), stack.NumItems);
+		addedTotal += self->GetInventory()->AddStack(stack, /* allowPartialAdd= */true);
+		UE_LOG(TruckStationSettings, Verbose, TEXT("Added %d items to Docking station inventory"), addedTotal);
+		dockedInventory->RemoveFromIndex(itemDescIndex, addedTotal);
+		if (addedTotal > 0) {
+			// Only 1 stack per call.
+			break;
+		}
+	}
+
+	if (addedTotal == 0) {
+		self->LoadUnloadVehicleComplete();
+	}
+
+	return STATUS_CANCEL;
 }
 
 void FTruckStationSettingsModule::StartupModule()
