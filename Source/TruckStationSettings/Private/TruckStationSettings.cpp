@@ -18,12 +18,12 @@ DEFINE_LOG_CATEGORY(TruckStationSettings);
 class TSSFGHooks {
 public:
 	static void RegisterHooks();
-	static int32 ProgrammableUnloadDockedInventoryOverride(AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory);
+	static int32 ProgrammableUnloadDockedInventoryOverride(const AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory);
 };
 
 void TSSFGHooks::RegisterHooks() {
 	if (!WITH_EDITOR) {
-		SUBSCRIBE_METHOD(AFGBuildableDockingStation::Factory_UnloadDockedInventory, [](auto& scope, AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
+		SUBSCRIBE_METHOD(AFGBuildableDockingStation::Factory_LoadUnloadDockedInventory, [](auto& scope, const AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
 			static const FString PROGRAMMABLE_TRUCK_STATION_CNAME = TEXT("Build_ProgrammableTruckStation_C");
 
 			if (self == nullptr) {
@@ -35,22 +35,24 @@ void TSSFGHooks::RegisterHooks() {
 			FString dockStationClassName = self->GetClass()->GetName();
 			UE_LOG(TruckStationSettings, Verbose, TEXT("Got instance of %s"), *dockStationClassName);
 			if (dockStationClassName.Equals(PROGRAMMABLE_TRUCK_STATION_CNAME)) {
-				if (ProgrammableUnloadDockedInventoryOverride(self, dockedInventory) == STATUS_CANCEL) {
-					scope.Cancel();
+				if (self->GetIsInLoadMode()) {
+					// Load mode, use default implementation.
+					scope(self, dockedInventory);
 					return;
 				}
+				// Unload mode, patch unloading here.
+				UE_LOG(TruckStationSettings, Verbose, TEXT("Patched callback"));
+				scope(self, dockedInventory);
+				//TODO: scope.Override(return_value) here.
+				return;
 			}
 
 			scope(self, dockedInventory);
 		});
-		SUBSCRIBE_METHOD(AFGBuildableDockingStation::LoadUnloadVehicleComplete, [](auto& scope, AFGBuildableDockingStation* self) {
-			UE_LOG(TruckStationSettings, Verbose, TEXT("LoadUnloadVehicleComplete"));
-			scope(self);
-		});
 	}
 }
 
-int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
+int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(const AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
 	UE_LOG(TruckStationSettings, Verbose, TEXT("Applying filtering of smart truck station"));
 	FProperty* filterItemProp = self->GetClass()->FindPropertyByName(FName("FilterItem"));
 	FArrayProperty* filterItemArrayProp = CastField<FArrayProperty>(filterItemProp);
@@ -101,7 +103,9 @@ int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(AFGBuildableDockingS
 	}
 
 	if (addedTotal == 0) {
-		self->LoadUnloadVehicleComplete();
+		// TODO: Figure out the new call
+		// self->Factory_LoadUnloadVehicleComplete();
+		UE_LOG(TruckStationSettings, Verbose, TEXT("No items transferred in Load/Unload call"));
 	}
 
 	return STATUS_CANCEL;
