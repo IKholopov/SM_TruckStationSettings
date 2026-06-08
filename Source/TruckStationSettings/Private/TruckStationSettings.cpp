@@ -15,10 +15,24 @@ constexpr int32 STATUS_RESUME = 1;
 
 DEFINE_LOG_CATEGORY(TruckStationSettings);
 
+namespace {
+	enum class UnloadHookStatus {
+		STATUS_RESUME,
+		STATUS_CANCEL,
+		STATUS_OVERRIDE
+	};
+
+	struct UnloadHookResult {
+		int32 AddedItems;
+		UnloadHookStatus Status;
+	};
+
+} // namespace
+
 class TSSFGHooks {
 public:
 	static void RegisterHooks();
-	static int32 ProgrammableUnloadDockedInventoryOverride(const AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory);
+	static UnloadHookResult ProgrammableUnloadDockedInventoryOverride(const AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory);
 };
 
 void TSSFGHooks::RegisterHooks() {
@@ -34,37 +48,47 @@ void TSSFGHooks::RegisterHooks() {
 			
 			FString dockStationClassName = self->GetClass()->GetName();
 			UE_LOG(TruckStationSettings, Verbose, TEXT("Got instance of %s"), *dockStationClassName);
-			if (dockStationClassName.Equals(PROGRAMMABLE_TRUCK_STATION_CNAME)) {
-				if (self->GetIsInLoadMode()) {
-					// Load mode, use default implementation.
-					scope(self, dockedInventory);
-					return;
-				}
-				// Unload mode, patch unloading here.
-				UE_LOG(TruckStationSettings, Verbose, TEXT("Patched callback"));
+			if (!dockStationClassName.Equals(PROGRAMMABLE_TRUCK_STATION_CNAME)) {
 				scope(self, dockedInventory);
-				//TODO: scope.Override(return_value) here.
 				return;
 			}
 
-			scope(self, dockedInventory);
+			if (self->GetIsInLoadMode()) {
+				// Load mode, use default implementation.
+				scope(self, dockedInventory);
+				return;
+			}
+			// Unload mode, patch unloading here.
+			UE_LOG(TruckStationSettings, Verbose, TEXT("Patched callback"));
+			UnloadHookResult hookResult = ProgrammableUnloadDockedInventoryOverride(self, dockedInventory);
+			switch (hookResult.Status) {
+				case UnloadHookStatus::STATUS_CANCEL:
+					scope.Override(0);
+					break;
+				case UnloadHookStatus::STATUS_OVERRIDE:
+					scope.Override(hookResult.AddedItems);
+					break;
+				case UnloadHookStatus::STATUS_RESUME:
+				default:
+					scope(self, dockedInventory);
+			}
 		});
 	}
 }
 
-int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(const AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
+UnloadHookResult TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(const AFGBuildableDockingStation* self, UFGInventoryComponent* dockedInventory) {
 	UE_LOG(TruckStationSettings, Verbose, TEXT("Applying filtering of smart truck station"));
 	FProperty* filterItemProp = self->GetClass()->FindPropertyByName(FName("FilterItem"));
 	FArrayProperty* filterItemArrayProp = CastField<FArrayProperty>(filterItemProp);
 	if (filterItemArrayProp == nullptr) {
 		UE_LOG(TruckStationSettings, Error, TEXT("FilterItem set variable is not found!"));
-		return STATUS_RESUME;
+		return { .AddedItems = 0, .Status = UnloadHookStatus::STATUS_RESUME };
 	}
 
 	FScriptArrayHelper itemsSet(filterItemArrayProp, filterItemArrayProp->ContainerPtrToValuePtr<void>(self));
 	if (itemsSet.Num() == 0) {
 		UE_LOG(TruckStationSettings, Verbose, TEXT("Filters are empty"));
-		return STATUS_RESUME;
+		return { .AddedItems = 0, .Status = UnloadHookStatus::STATUS_RESUME };
 	}
 	int32 addedTotal = 0;
 	for (int32 i = 0; i < itemsSet.Num(); ++i) {
@@ -72,43 +96,38 @@ int32 TSSFGHooks::ProgrammableUnloadDockedInventoryOverride(const AFGBuildableDo
 		FObjectPropertyBase* property = CastField<FObjectPropertyBase>(filterItemArrayProp->Inner);
 		if (property == nullptr) {
 			UE_LOG(TruckStationSettings, Verbose, TEXT("property is empty"));
-			return STATUS_RESUME;
+			return { .AddedItems = 0, .Status = UnloadHookStatus::STATUS_RESUME };
 		}
 		UObject* filterItemDesc = property->GetObjectPropertyValue(valuePtr);
 		UClass* filterItemDescClass = Cast<UClass>(filterItemDesc);
 		if (filterItemDescClass == nullptr) {
 			UE_LOG(TruckStationSettings, Verbose, TEXT("FilterItem is empty"));
-			return STATUS_RESUME;
-		}
-
-		int32 itemDescIndex = dockedInventory->FindFirstIndexWithItemType(filterItemDescClass, 0);
-		UE_LOG(TruckStationSettings, Verbose, TEXT("Got item desc of %d"), itemDescIndex);
-		if (itemDescIndex == NOT_FOUND) {
 			continue;
 		}
 
-		FInventoryStack stack;
-		if (!dockedInventory->GetStackFromIndex(itemDescIndex, stack)) {
-			UE_LOG(TruckStationSettings, Error, TEXT("Invalid index requested from docked inventory!"));
-			return STATUS_CANCEL;
-		}
-		UE_LOG(TruckStationSettings, Verbose, TEXT("Got stack of items %d"), stack.NumItems);
-		addedTotal += self->GetInventory()->AddStack(stack, /* allowPartialAdd= */true);
-		UE_LOG(TruckStationSettings, Verbose, TEXT("Added %d items to Docking station inventory"), addedTotal);
-		dockedInventory->RemoveFromIndex(itemDescIndex, addedTotal);
-		if (addedTotal > 0) {
-			// Only 1 stack per call.
-			break;
+		for (int32 itemDescIndex = dockedInventory->FindFirstIndexWithItemType(filterItemDescClass, 0);
+				itemDescIndex != NOT_FOUND;
+				itemDescIndex = dockedInventory->FindFirstIndexWithItemType(filterItemDescClass, itemDescIndex + 1)) {
+			UE_LOG(TruckStationSettings, Verbose, TEXT("Got item desc of %d"), itemDescIndex);
+
+			FInventoryStack stack;
+			if (!dockedInventory->GetStackFromIndex(itemDescIndex, stack)) {
+				UE_LOG(TruckStationSettings, Error, TEXT("Invalid index requested from docked inventory!"));
+				return { .AddedItems = 0, .Status = UnloadHookStatus::STATUS_CANCEL };
+			}
+			UE_LOG(TruckStationSettings, Verbose, TEXT("Got stack of items %d"), stack.NumItems);
+			int32 addedInStack = self->GetInventory()->AddStack(stack, /* allowPartialAdd= */true);
+			if (addedInStack == 0) {
+				UE_LOG(TruckStationSettings, Verbose, TEXT("Can't add anymore, assuming full"));
+				return { .AddedItems = addedTotal, .Status = UnloadHookStatus::STATUS_OVERRIDE };
+			}
+			addedTotal += addedInStack;
+			UE_LOG(TruckStationSettings, Verbose, TEXT("Added %d items to Docking station inventory"), addedTotal);
+			dockedInventory->RemoveFromIndex(itemDescIndex, addedInStack);
 		}
 	}
 
-	if (addedTotal == 0) {
-		// TODO: Figure out the new call
-		// self->Factory_LoadUnloadVehicleComplete();
-		UE_LOG(TruckStationSettings, Verbose, TEXT("No items transferred in Load/Unload call"));
-	}
-
-	return STATUS_CANCEL;
+	return { .AddedItems = addedTotal, .Status = UnloadHookStatus::STATUS_OVERRIDE };
 }
 
 void FTruckStationSettingsModule::StartupModule()
