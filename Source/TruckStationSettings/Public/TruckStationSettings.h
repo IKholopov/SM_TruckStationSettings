@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(TruckStationSettings, Verbose, All);
+DECLARE_LOG_CATEGORY_EXTERN(TruckStationSettings, Warning, All);
 
 class FTruckStationSettingsModule : public IModuleInterface
 {
