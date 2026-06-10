@@ -10,8 +10,6 @@
 #define LOCTEXT_NAMESPACE "FTruckStationSettingsModule"
 
 constexpr int32 NOT_FOUND = -1;
-constexpr int32 STATUS_CANCEL = 0;
-constexpr int32 STATUS_RESUME = 1;
 
 DEFINE_LOG_CATEGORY(TruckStationSettings);
 
