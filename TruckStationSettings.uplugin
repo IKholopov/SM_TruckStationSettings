@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.0.0",
+	"VersionName": "1.1.0",
 	"FriendlyName": "Smarter Truck Stations",
 	"Description": "Adds advanced settings to truck stations!",
 	"Category": "Modding",
@@ -18,16 +18,17 @@
 		{
 			"Name": "SML",
 			"Enabled": true,
-			"SemVersion": "^3.11.3"
+			"SemVersion": "^3.12.0"
 		}
 	],
-	"SemVersion": "1.0.0",
-	"GameVersion": ">=416835",
+	"SemVersion": "1.1.0",
+	"GameVersion": ">=491125",
 	"Modules": [
 		{
 			"Name": "TruckStationSettings",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
 		}
-	]
+	],
+	"BuiltInInitialFeatureState": "Active"
 }
